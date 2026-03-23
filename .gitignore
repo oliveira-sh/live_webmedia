@@ -1,0 +1,36 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Logs
+*.log
+npm-debug.log*
+
+# macOS
+.DS_Store
+.AppleDouble
+
+# Environment variables
+.env
+.env.local
+.env*.local
+dashboard/.env*.local
+
+# Next.js build output
+dashboard/.next/
+dashboard/node_modules/
+dashboard/out/
+
+# Generated data files (run scripts/preprocess.py to regenerate)
+dashboard/public/data/
+
+# Raw data (large files; regenerate with src/build_coauthorship_network.py)
+data/
+
+# Generated community detection results (regenerate with src/communities/)
+src/communities/pareto_results.csv
+src/communities/communities.csv
+src/communities/partition*.json
