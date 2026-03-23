@@ -129,11 +129,177 @@ def enrich_with_metadata(nodes: dict) -> dict:
     return nodes
 
 
-# ── Layout (force-directed) ────────────────────────────────────────────────────
+# ── Layout ─────────────────────────────────────────────────────────────────────
+
+def _fruchterman_reingold(node_ids: list, adj_weights: dict,
+                           iterations: int, k: float, seed: int = 42) -> dict:
+    """Fruchterman-Reingold spring layout implemented with stdlib only.
+    O(n²) per iteration – suitable for the community-level graph (~100-800 nodes).
+    adj_weights: {node_id: {neighbor_id: weight, ...}}
+    Returns: {node_id: [x, y]}
+    """
+    import random
+    rng = random.Random(seed)
+    n = len(node_ids)
+    if n == 0:
+        return {}
+    if n == 1:
+        return {node_ids[0]: [0.0, 0.0]}
+
+    pos = {nid: [rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0)]
+           for nid in node_ids}
+
+    temp = 1.0
+    cool = temp / (iterations + 1)
+
+    for _ in range(iterations):
+        disp = {nid: [0.0, 0.0] for nid in node_ids}
+
+        # repulsive forces (all pairs)
+        for i in range(n):
+            v = node_ids[i]
+            pv = pos[v]
+            for j in range(i + 1, n):
+                u = node_ids[j]
+                pu = pos[u]
+                dx, dy = pv[0] - pu[0], pv[1] - pu[1]
+                dist = math.sqrt(dx * dx + dy * dy) or 1e-6
+                rep = k * k / dist
+                nx_, ny_ = dx / dist * rep, dy / dist * rep
+                disp[v][0] += nx_;  disp[v][1] += ny_
+                disp[u][0] -= nx_;  disp[u][1] -= ny_
+
+        # attractive forces (edges)
+        for v, neighbours in adj_weights.items():
+            pv = pos[v]
+            for u, w in neighbours.items():
+                pu = pos[u]
+                dx, dy = pv[0] - pu[0], pv[1] - pu[1]
+                dist = math.sqrt(dx * dx + dy * dy) or 1e-6
+                att = dist * dist / k * w
+                nx_, ny_ = dx / dist * att, dy / dist * att
+                disp[v][0] -= nx_;  disp[v][1] -= ny_
+
+        # apply capped by temperature
+        for nid in node_ids:
+            dx, dy = disp[nid]
+            d = math.sqrt(dx * dx + dy * dy) or 1e-6
+            scale = min(d, temp) / d
+            pos[nid][0] += dx * scale
+            pos[nid][1] += dy * scale
+
+        temp -= cool
+
+    return pos
+
+
+def compute_community_layout(nodes: dict, edges: list, partition: dict,
+                              iterations: int = 50) -> dict:
+    """Two-level layout:
+    1. Fruchterman-Reingold on the community graph (no external deps needed).
+    2. Phyllotaxis (sunflower) spiral to pack nodes within each cluster.
+
+    Uses networkx if available for a faster level-1 layout; falls back to the
+    pure-stdlib implementation otherwise.
+    """
+    print(f"Computing community-aware two-level layout (iterations={iterations}) …")
+
+    # ── group nodes by community ───────────────────────────────────────────────
+    community_members: dict[int, list] = {}
+    for nid in nodes:
+        cid = partition.get(nid, -1)
+        community_members.setdefault(cid, []).append(nid)
+
+    for members in community_members.values():
+        members.sort()
+
+    non_isolated = {c: m for c, m in community_members.items() if c != -1}
+    isolated     = community_members.get(-1, [])
+    n_comm       = len(non_isolated)
+    print(f"  {n_comm} communities, {len(isolated)} isolated nodes")
+
+    if n_comm == 0:
+        import random
+        rng = random.Random(42)
+        for node in nodes.values():
+            node["x"] = rng.uniform(-1, 1)
+            node["y"] = rng.uniform(-1, 1)
+        return nodes
+
+    # ── level-1: layout of community centroids ────────────────────────────────
+    # Build inter-community adjacency (weighted by edge count)
+    comm_adj: dict[int, dict[int, float]] = {c: {} for c in non_isolated}
+    for e in edges:
+        c1 = partition.get(e["source"], -1)
+        c2 = partition.get(e["target"], -1)
+        if c1 != -1 and c2 != -1 and c1 != c2:
+            comm_adj[c1][c2] = comm_adj[c1].get(c2, 0.0) + e["weight"]
+            comm_adj[c2][c1] = comm_adj[c2].get(c1, 0.0) + e["weight"]
+
+    comm_ids = list(non_isolated.keys())
+    k_comm   = 2.0 / math.sqrt(max(n_comm, 1))
+
+    try:
+        import networkx as nx
+        CG = nx.Graph()
+        CG.add_nodes_from(comm_ids)
+        for c1, neighbours in comm_adj.items():
+            for c2, w in neighbours.items():
+                if c1 < c2:
+                    CG.add_edge(c1, c2, weight=w)
+        raw = nx.spring_layout(CG, k=k_comm, iterations=iterations,
+                               weight="weight", seed=42)
+        comm_pos = {c: list(p) for c, p in raw.items()}
+        print("  (using networkx for community-level spring layout)")
+    except ImportError:
+        comm_pos = _fruchterman_reingold(
+            comm_ids, comm_adj, iterations=iterations, k=k_comm)
+
+    # ── level-2: phyllotaxis spiral inside each community ─────────────────────
+    max_size     = max(len(m) for m in non_isolated.values())
+    cluster_scale = 0.65 / math.sqrt(max(n_comm, 1))
+    golden_angle  = math.pi * (3.0 - math.sqrt(5.0))   # ≈ 137.5°
+
+    final_pos: dict[str, tuple] = {}
+
+    for cid, members in non_isolated.items():
+        cx, cy = comm_pos[cid]
+        n      = len(members)
+        r_max  = cluster_scale * math.sqrt(n) / math.sqrt(max_size)
+
+        for i, nid in enumerate(members):
+            if n == 1:
+                final_pos[nid] = (cx, cy)
+            else:
+                r     = r_max * math.sqrt((i + 0.5) / n)
+                theta = golden_angle * i
+                final_pos[nid] = (cx + r * math.cos(theta),
+                                  cy + r * math.sin(theta))
+
+    # isolated nodes in a ring at the periphery
+    for i, nid in enumerate(isolated):
+        theta = 2 * math.pi * i / max(len(isolated), 1)
+        final_pos[nid] = (1.6 * math.cos(theta), 1.6 * math.sin(theta))
+
+    # ── normalise to [-1, 1] ──────────────────────────────────────────────────
+    all_x  = [p[0] for p in final_pos.values()]
+    all_y  = [p[1] for p in final_pos.values()]
+    min_x, max_x = min(all_x), max(all_x)
+    min_y, max_y = min(all_y), max(all_y)
+    span_x = max_x - min_x or 1
+    span_y = max_y - min_y or 1
+
+    for nid, (x, y) in final_pos.items():
+        if nid in nodes:
+            nodes[nid]["x"] = round((x - min_x) / span_x * 2 - 1, 5)
+            nodes[nid]["y"] = round((y - min_y) / span_y * 2 - 1, 5)
+
+    print("  Layout done.")
+    return nodes
+
 
 def compute_layout(nodes: dict, edges: list, iterations: int = 50) -> dict:
-    """Fruchterman-Reingold layout implemented without NetworkX dependency.
-    Falls back to networkx if available (much faster)."""
+    """Flat spring layout (fallback when no partition is available)."""
     try:
         import networkx as nx
         print(f"Computing spring layout with NetworkX (iterations={iterations}) …")
@@ -142,7 +308,7 @@ def compute_layout(nodes: dict, edges: list, iterations: int = 50) -> dict:
         for e in edges:
             G.add_edge(e["source"], e["target"], weight=e["weight"])
 
-        k = 2.0 / math.sqrt(len(G))
+        k   = 2.0 / math.sqrt(len(G))
         pos = nx.spring_layout(G, k=k, iterations=iterations, seed=42)
 
         xs = [p[0] for p in pos.values()]
@@ -228,7 +394,16 @@ def main():
     nodes = enrich_with_metadata(nodes)
 
     if not args.skip_layout:
-        nodes = compute_layout(nodes, edges, iterations=args.layout_iterations)
+        # Prefer community-aware layout using the best-modularity partition
+        layout_partition_file = SRC_DIR / "partition_best_modularity.json"
+        if layout_partition_file.exists():
+            with open(layout_partition_file) as f:
+                layout_partition = json.load(f)
+            nodes = compute_community_layout(nodes, edges, layout_partition,
+                                             iterations=args.layout_iterations)
+        else:
+            print("No partition found – falling back to flat spring layout.")
+            nodes = compute_layout(nodes, edges, iterations=args.layout_iterations)
     else:
         print("Skipping layout computation – using random positions.")
         import random
