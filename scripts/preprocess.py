@@ -80,7 +80,7 @@ def parse_graphml():
         nodes[nid] = {
             "id": nid,
             "papers": int(attrs.get("papers", 1) or 1),
-            "affiliation": attrs.get("affiliation", "Unknown") or "Unknown",
+            "affiliation": (attrs.get("affiliation") or "Unknown").strip() or "Unknown",
         }
 
     for edge_el in find_all(graph, "edge"):

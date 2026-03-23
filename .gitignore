@@ -24,11 +24,8 @@ dashboard/.next/
 dashboard/node_modules/
 dashboard/out/
 
-# Generated data files (run scripts/preprocess.py to regenerate)
-dashboard/public/data/
-
 # Raw data (large files; regenerate with src/build_coauthorship_network.py)
-data/
+/data/
 
 # Generated community detection results (regenerate with src/communities/)
 src/communities/pareto_results.csv

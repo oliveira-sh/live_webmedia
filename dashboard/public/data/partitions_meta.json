@@ -1,0 +1,37 @@
+{
+  "partition_best_modularity": {
+    "key": "partition_best_modularity",
+    "filename": "partition_best_modularity.json",
+    "label": "Best Modularity",
+    "idx": 1,
+    "n_communities": 420
+  },
+  "partition_best_region": {
+    "key": "partition_best_region",
+    "filename": "partition_best_region.json",
+    "label": "Best Region Purity",
+    "idx": 150,
+    "n_communities": 739
+  },
+  "partition_best_tipo": {
+    "key": "partition_best_tipo",
+    "filename": "partition_best_tipo.json",
+    "label": "Best Type Purity",
+    "idx": 103,
+    "n_communities": 1150
+  },
+  "partition_best_affiliation": {
+    "key": "partition_best_affiliation",
+    "filename": "partition_best_affiliation.json",
+    "label": "Best Affiliation Purity",
+    "idx": 150,
+    "n_communities": 739
+  },
+  "partition_default": {
+    "key": "partition_default",
+    "filename": "partition.json",
+    "label": "Default",
+    "idx": 0,
+    "n_communities": 413
+  }
+}
