@@ -181,7 +181,7 @@ export default function NetworkGraph({ network, partition, focusNode, affiliatio
         ],
         minZoom: 0.05,
         maxZoom: 8,
-        wheelSensitivity: 2.5,
+        wheelSensitivity: 1.5,
         motionBlur: false,
         textureOnViewport: true,
         hideEdgesOnViewport: true,

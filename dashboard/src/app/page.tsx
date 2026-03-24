@@ -67,9 +67,11 @@ export default function Dashboard() {
         setPareto(par);
         setPartitionsMeta(pmeta);
 
-        // Auto-select first partition
-        const firstKey = Object.keys(pmeta)[0] ?? null;
-        if (firstKey) loadPartition(firstKey, pmeta, par);
+        // Default to best modularity partition
+        const defaultKey = "partition_best_modularity" in pmeta
+          ? "partition_best_modularity"
+          : (Object.keys(pmeta)[0] ?? null);
+        if (defaultKey) loadPartition(defaultKey, pmeta, par);
       } catch (err) {
         setDataError(String(err));
       } finally {
