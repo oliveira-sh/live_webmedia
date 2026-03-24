@@ -74,6 +74,7 @@ export default function NetworkGraph({ network, partition, focusNode, affiliatio
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cyRef = useRef<any>(null);
   const affiliationFilterRef = useRef<Set<string>>(new Set());
+  const partitionRef = useRef<PartitionData | null>(null);
 
   // ── Initialise Cytoscape ───────────────────────────────────────────────────
   useEffect(() => {
@@ -180,7 +181,7 @@ export default function NetworkGraph({ network, partition, focusNode, affiliatio
         ],
         minZoom: 0.05,
         maxZoom: 8,
-        wheelSensitivity: 0.7,
+        wheelSensitivity: 2.5,
         motionBlur: false,
         textureOnViewport: true,
         hideEdgesOnViewport: true,
@@ -230,6 +231,7 @@ export default function NetworkGraph({ network, partition, focusNode, affiliatio
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy || !partition) return;
+    partitionRef.current = partition;
 
     const rankMap = buildRankMap(partition);
 
@@ -256,9 +258,16 @@ export default function NetworkGraph({ network, partition, focusNode, affiliatio
   function applyAffilFilter(cy: any) {
     const filter = affiliationFilterRef.current;
     if (filter.size === 0) {
+      // Restore community colors and full opacity
+      const p = partitionRef.current;
+      const rankMap = p ? buildRankMap(p) : null;
       cy.nodes().forEach((n: any) => {
         n.style("opacity", 1);
-        n.style("border-width", 0);
+        if (p && rankMap) {
+          const cid: number = p[n.id()] ?? -1;
+          const rank = cid === -1 ? -1 : (rankMap.get(cid) ?? PALETTE.length);
+          n.style("background-color", communityColor(cid, rank));
+        }
       });
       return;
     }
@@ -267,12 +276,9 @@ export default function NetworkGraph({ network, partition, focusNode, affiliatio
       const aff = n.data("affiliation") as string;
       if (filter.has(aff)) {
         n.style("opacity", 1);
-        n.style("border-width", 3);
-        n.style("border-color", colorMap.get(aff) ?? "#f59e0b");
-        n.style("border-opacity", 1);
+        n.style("background-color", colorMap.get(aff) ?? "#f59e0b");
       } else {
         n.style("opacity", 0.05);
-        n.style("border-width", 0);
       }
     });
   }
@@ -294,7 +300,6 @@ export default function NetworkGraph({ network, partition, focusNode, affiliatio
 
   function clearHighlight(cy: any) {
     cy.elements().removeClass("faded highlighted ego-node ego-edge");
-    cy.nodes().forEach((n: any) => n.style("border-width", 0));
     applyAffilFilter(cy);
   }
 
